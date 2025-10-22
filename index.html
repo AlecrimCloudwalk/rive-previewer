@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rive Standalone Tester</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Rive Tester</h1>
+    <div class="file-row">
+      <label for="filePath">Rive file:</label>
+      <input id="filePath" type="text" class="file-input" value="./jim_eye_all_master_v4_evil_cores_bg_(1)(1).riv" />
+      <button id="loadBtn" class="btn">Load</button>
+      <input id="fileChooser" type="file" accept=".riv" />
+    </div>
+    <div class="sm-row">
+      <span>Artboard:</span>
+      <select id="artboardSelect" class="sm-input"></select>
+      <span>State machine:</span>
+      <select id="smSelect" class="sm-input"></select>
+      <input id="smName" type="text" class="sm-input" placeholder="or type name" />
+      <button id="reloadBtn" class="btn btn-secondary">Reload</button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <section class="stage" id="dropZone">
+      <canvas id="riveCanvas"></canvas>
+      <div id="dropOverlay" class="drop-overlay">
+        <div class="drop-message">Drop .riv file here</div>
+      </div>
+    </section>
+    <aside class="controls" id="controls">
+      <h2>Inputs</h2>
+      <div id="inputsContainer" class="inputs"></div>
+    </aside>
+  </main>
+
+  <!-- Rive JS runtime (Canvas) -->
+  <script src="https://unpkg.com/@rive-app/canvas@2"></script>
+  <script src="./main.js"></script>
+</body>
+</html>
+
+
