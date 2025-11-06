@@ -2,13 +2,21 @@
 
 const canvas = document.getElementById('riveCanvas');
 const inputsContainer = document.getElementById('inputsContainer');
-const loadBtn = document.getElementById('loadBtn');
 const reloadBtn = document.getElementById('reloadBtn');
 const filePathInput = document.getElementById('filePath');
 const fileChooser = document.getElementById('fileChooser');
 const smNameInput = document.getElementById('smName');
 const artboardSelect = document.getElementById('artboardSelect');
 const smSelect = document.getElementById('smSelect');
+const libraryFilesContainer = document.getElementById('libraryFiles');
+
+// Library files from the rives folder
+const LIBRARY_FILES = [
+  { name: 'Medal Moedas', path: './rives/medal_moedas_(15).riv' },
+  { name: 'Widget IP', path: './rives/widgetip.riv' },
+  { name: 'Untitled', path: './rives/untitledasdasd.riv' },
+  { name: 'Jim Eye Evil', path: './jim_eye_all_master_v4_evil_cores_bg_(1).riv' },
+];
 
 /** @type {import('@rive-app/canvas').Rive | null} */
 let riveInstance = null;
@@ -16,6 +24,7 @@ let currentSMName = null;
 let currentArtboardName = null;
 let inputNameToController = new Map();
 let selectedRivBuffer = null;
+let currentLibraryFile = null;
 
 function disposeRive() {
   if (riveInstance) {
@@ -287,8 +296,36 @@ async function loadRive() {
   }
 }
 
+// Populate library files
+function populateLibraryFiles() {
+  libraryFilesContainer.innerHTML = '';
+  LIBRARY_FILES.forEach((file, index) => {
+    const btn = document.createElement('button');
+    btn.className = 'library-file';
+    btn.textContent = file.name;
+    btn.dataset.path = file.path;
+    btn.dataset.index = index;
+    btn.addEventListener('click', () => selectLibraryFile(file, btn));
+    libraryFilesContainer.appendChild(btn);
+  });
+}
+
+function selectLibraryFile(file, btn) {
+  // Clear any uploaded file buffer
+  selectedRivBuffer = null;
+  currentLibraryFile = file.path;
+  
+  // Update UI
+  document.querySelectorAll('.library-file').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  filePathInput.value = file.path;
+  fileChooser.value = '';
+  
+  // Load the file
+  loadRive();
+}
+
 // Wire UI
-loadBtn.addEventListener('click', loadRive);
 reloadBtn.addEventListener('click', loadRive);
 
 // Local file chooser avoids CORS by providing ArrayBuffer directly to the Rive runtime
@@ -296,6 +333,11 @@ async function handleRiveFile(file) {
   if (!file) return;
   try {
     selectedRivBuffer = await file.arrayBuffer();
+    currentLibraryFile = null;
+    
+    // Clear library selection
+    document.querySelectorAll('.library-file').forEach(b => b.classList.remove('active'));
+    
     filePathInput.value = file.name;
     await loadRive();
   } catch (err) {
@@ -345,7 +387,16 @@ dropZone.addEventListener('drop', async (e) => {
 
 // Auto-load on first paint
 window.addEventListener('DOMContentLoaded', () => {
-  loadRive();
+  populateLibraryFiles();
+  
+  // Auto-select first library file
+  if (LIBRARY_FILES.length > 0) {
+    const firstBtn = libraryFilesContainer.querySelector('.library-file');
+    if (firstBtn) {
+      selectLibraryFile(LIBRARY_FILES[0], firstBtn);
+    }
+  }
+  
   artboardSelect.addEventListener('change', () => loadRive());
   smSelect.addEventListener('change', () => loadRive());
 });

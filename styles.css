@@ -25,6 +25,61 @@ body {
 }
 
 .app-header h1 { margin: 0 0 4px 0; font-size: 18px; }
+
+.library-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #0c0f16;
+  border: 1px solid #283149;
+  border-radius: 8px;
+}
+
+.library-section label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.library-files {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.library-file {
+  background: var(--accent-2);
+  color: var(--text);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.library-file:hover {
+  background: #3a4764;
+  border-color: var(--accent);
+}
+
+.library-file.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
+.or-text {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
 .file-row, .sm-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .file-input, .sm-input {
   flex: 1;
@@ -45,7 +100,7 @@ body {
 .btn-secondary { background: var(--accent-2); }
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.app-main { display: grid; grid-template-columns: 1fr 340px; height: calc(100% - 106px); min-height: 480px; }
+.app-main { display: grid; grid-template-columns: 1fr 340px; height: calc(100vh - 220px); min-height: 480px; }
 
 .stage { display: grid; place-items: center; padding: 12px; position: relative; }
 canvas { width: 100%; height: 100%; max-height: 100%; background: #000; border-radius: 8px; }

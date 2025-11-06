@@ -11,12 +11,23 @@
 <body>
   <header class="app-header">
     <h1>Rive Tester</h1>
-    <div class="file-row">
-      <label for="filePath">Rive file:</label>
-      <input id="filePath" type="text" class="file-input" value="./jim_eye_all_master_v4_evil_cores_bg_(1)(1).riv" />
-      <button id="loadBtn" class="btn">Load</button>
-      <input id="fileChooser" type="file" accept=".riv" />
+    
+    <div class="library-section">
+      <label>Library Files:</label>
+      <div id="libraryFiles" class="library-files"></div>
     </div>
+
+    <div class="file-row">
+      <label for="fileChooser">Upload Local File:</label>
+      <input id="fileChooser" type="file" accept=".riv" />
+      <span class="or-text">or drag & drop below</span>
+    </div>
+
+    <div class="file-row">
+      <label for="filePath">File Path:</label>
+      <input id="filePath" type="text" class="file-input" readonly />
+    </div>
+    
     <div class="sm-row">
       <span>Artboard:</span>
       <select id="artboardSelect" class="sm-input"></select>
