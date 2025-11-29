@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rive ViewModel API Test</title>
+  <style>
+    body {
+      font-family: system-ui;
+      padding: 20px;
+      background: #0f1115;
+      color: #d6deeb;
+    }
+    canvas {
+      border: 1px solid #333;
+      background: #000;
+    }
+    pre {
+      background: #1a1d24;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .error { color: #ff5555; }
+    .success { color: #50fa7b; }
+    .info { color: #8be9fd; }
+  </style>
+</head>
+<body>
+  <h1>Rive ViewModel / Data Binding API Test</h1>
+  
+  <h2>Runtime Version & Available APIs</h2>
+  <pre id="apiInfo">Loading...</pre>
+  
+  <h2>File Load Test</h2>
+  <input type="file" id="fileInput" accept=".riv" />
+  <br><br>
+  <canvas id="canvas" width="400" height="400"></canvas>
+  
+  <h2>Console Log</h2>
+  <pre id="console"></pre>
+
+  <script src="https://unpkg.com/@rive-app/canvas@latest/rive.js"></script>
+  <script>
+    const consoleEl = document.getElementById('console');
+    const apiInfoEl = document.getElementById('apiInfo');
+    
+    function log(message, type = 'info') {
+      const line = document.createElement('div');
+      line.className = type;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      consoleEl.appendChild(line);
+      console.log(message);
+    }
+
+    // Check what's available in the Rive namespace
+    window.addEventListener('DOMContentLoaded', () => {
+      log('Checking Rive runtime...', 'info');
+      
+      if (typeof rive !== 'undefined') {
+        log('✓ Rive runtime loaded', 'success');
+        
+        const apiInfo = {
+          'Rive Version': rive.RuntimeVersion || rive.VERSION || 'Unknown',
+          'Available Classes': Object.keys(rive).filter(k => typeof rive[k] === 'function'),
+          'Rive.Rive prototype methods': Object.getOwnPropertyNames(rive.Rive.prototype).filter(m => !m.startsWith('_'))
+        };
+        
+        apiInfoEl.textContent = JSON.stringify(apiInfo, null, 2);
+        log('API Info logged above', 'success');
+      } else {
+        log('✗ Rive runtime not loaded!', 'error');
+      }
+    });
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      log(`Loading file: ${file.name}`, 'info');
+      
+      try {
+        const buffer = await file.arrayBuffer();
+        log(`File size: ${buffer.byteLength} bytes`, 'info');
+        
+        const r = new rive.Rive({
+          buffer: buffer,
+          canvas: document.getElementById('canvas'),
+          autoplay: true,
+          onLoad: () => {
+            log('✓ File loaded successfully!', 'success');
+            
+            // Try to access different APIs
+            log('Checking available methods on instance...', 'info');
+            
+            // Check for artboard names
+            try {
+              const artboards = r.artboardNames();
+              log(`Artboards: ${JSON.stringify(artboards)}`, 'success');
+            } catch (e) {
+              log(`Error getting artboards: ${e.message}`, 'error');
+            }
+            
+            // Check for state machines
+            try {
+              const sms = r.stateMachineNames();
+              log(`State Machines: ${JSON.stringify(sms)}`, 'success');
+              
+              if (sms && sms.length > 0) {
+                const smName = sms[0];
+                log(`Testing State Machine: ${smName}`, 'info');
+                
+                // Try to get inputs
+                try {
+                  const inputs = r.stateMachineInputs(smName);
+                  log(`State Machine Inputs: ${JSON.stringify(inputs.map(i => ({name: i.name, type: i.type})))}`, 'success');
+                } catch (e) {
+                  log(`Error getting SM inputs: ${e.message}`, 'error');
+                }
+              }
+            } catch (e) {
+              log(`Error getting state machines: ${e.message}`, 'error');
+            }
+            
+            // Check for ViewModels / Data Binding APIs
+            log('Checking for ViewModel APIs...', 'info');
+            
+            const vmMethods = [
+              'viewModelNames',
+              'dataBindContextNames',
+              'viewModelByName',
+              'bindViewModelInstance',
+              'dataBindContext'
+            ];
+            
+            vmMethods.forEach(method => {
+              if (typeof r[method] === 'function') {
+                log(`✓ ${method}() is available`, 'success');
+                
+                // Try to call it
+                try {
+                  const result = r[method]();
+                  log(`  ${method}() result: ${JSON.stringify(result)}`, 'info');
+                } catch (e) {
+                  log(`  ${method}() error: ${e.message}`, 'error');
+                }
+              } else {
+                log(`✗ ${method}() not available`, 'error');
+              }
+            });
+          },
+          onLoadError: (err) => {
+            log(`✗ Error loading file: ${err}`, 'error');
+          }
+        });
+        
+      } catch (err) {
+        log(`✗ Error: ${err.message}`, 'error');
+      }
+    });
+  </script>
+</body>
+</html>
+

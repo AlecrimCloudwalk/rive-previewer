@@ -12,6 +12,7 @@ const libraryFilesContainer = document.getElementById('libraryFiles');
 
 // Library files from the rives folder
 const LIBRARY_FILES = [
+  { name: 'ViewModel Test', path: './rives/viewmodel_test.riv' },
   { name: 'Medal Moedas', path: './rives/medal_moedas_(15).riv' },
   { name: 'Widget IP', path: './rives/widgetip.riv' },
   { name: 'Untitled', path: './rives/untitledasdasd.riv' },
@@ -156,18 +157,29 @@ async function loadRive() {
     setTimeout(loadRive, 80);
     return;
   }
+  
+  // Log Rive version info
+  console.log('Rive Runtime Version:', RiveNS.RuntimeVersion || RiveNS.VERSION || 'Unknown');
+  
   const commonCtorOpts = {
     canvas,
     autoplay: true,
+    autoBind: true,  // Enable automatic ViewModel binding!
     layout: new RiveNS.Layout({
       fit: RiveNS.Fit.Contain,
       alignment: RiveNS.Alignment.Center,
     }),
+    onLoadError: (err) => {
+      console.error('=== Rive Load Error ===');
+      console.error('Error:', err);
+      console.error('File:', src || 'Buffer');
+      inputsContainer.innerHTML = '<div class="pill" style="background:#ff5555;color:#fff;">Error loading file: ' + err + '</div>';
+    }
   };
 
   const firstCtorOpts = selectedRivBuffer
-    ? { ...commonCtorOpts, buffer: selectedRivBuffer }
-    : { ...commonCtorOpts, src };
+    ? { ...commonCtorOpts, buffer: selectedRivBuffer, artboard: currentArtboardName || 'Artboard', stateMachines: desiredSM || 'State Machine 1' }
+    : { ...commonCtorOpts, src, artboard: currentArtboardName || 'Artboard', stateMachines: desiredSM || 'State Machine 1' };
 
   riveInstance = new RiveCtor({
     ...firstCtorOpts,
@@ -191,8 +203,91 @@ async function loadRive() {
 
       riveInstance.play(smName);
 
-      // Gather inputs
+      // Debug: Log the riveInstance to see what's available
+      console.log('=== Rive Instance Debug ===');
+      console.log('Rive Instance:', riveInstance);
+      console.log('State Machine Name:', smName);
+      
+      // Make sure state machine is playing
+      try {
+        riveInstance.play(smName);
+        console.log('✓ State Machine started:', smName);
+      } catch (e) {
+        console.log('Error starting state machine:', e.message);
+      }
+      
+      // Check for ViewModel Instance (new API from tutorial)
+      if (riveInstance.viewModelInstance) {
+        console.log('✓ viewModelInstance found!');
+        const vmi = riveInstance.viewModelInstance;
+        console.log('ViewModel Instance:', vmi);
+        
+        // Try to access the boolean property "asd"
+        try {
+          const asdProp = vmi.boolean('asd');
+          if (asdProp) {
+            console.log('✓ Found boolean property "asd"');
+            console.log('  Current value:', asdProp.value);
+            
+            // Create a control for it
+            const fakeInput = {
+              name: 'asd',
+              type: 'boolean',
+              value: asdProp.value,
+              setValue: (val) => {
+                console.log('=== TOGGLING ASD ===');
+                console.log('Setting asd from', asdProp.value, 'to', val);
+                asdProp.value = val;
+                console.log('Set asd to:', val);
+                
+                // Verify it was set
+                setTimeout(() => {
+                  console.log('Verified asd is now:', vmi.boolean('asd').value);
+                  console.log('Is playing:', riveInstance.isPlaying);
+                  console.log('Animation is responding! ✓');
+                }, 10);
+                
+                // Try to ensure state machine is playing
+                if (!riveInstance.isPlaying) {
+                  console.log('State machine not playing, starting it...');
+                  riveInstance.play();
+                }
+                
+                // Force a redraw
+                try {
+                  riveInstance.resizeDrawingSurfaceToCanvas();
+                } catch (e) {}
+              }
+            };
+            
+            // Build the UI immediately with this input
+            buildControls([fakeInput]);
+            return; // Exit early since we found the ViewModel input
+          }
+        } catch (e) {
+          console.log('Error accessing boolean "asd":', e.message);
+        }
+      } else {
+        console.log('✗ No viewModelInstance found');
+      }
+      
+      // Check for artboard
+      if (riveInstance.artboard) {
+        console.log('Artboard:', riveInstance.artboard);
+      }
+
+      // Gather inputs from State Machine
       let inputs = riveInstance.stateMachineInputs(smName) || [];
+      console.log('State Machine Inputs:', inputs);
+      console.log('State Machine Inputs length:', inputs.length);
+      console.log('State Machine Inputs details:', inputs.map(i => ({
+        name: i.name,
+        type: i.type,
+        value: i.value
+      })));
+      
+      // Log final input count
+      console.log('=== TOTAL INPUTS FOUND:', inputs.length, '===');
       // If empty, try re-instantiating with stateMachines prebound (some builds require this)
       if (!inputs || inputs.length === 0) {
         const prevSm = smName;
