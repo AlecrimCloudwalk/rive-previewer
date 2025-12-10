@@ -23,6 +23,64 @@ let inputNameToController = new Map();
 let selectedRivBuffer = null;
 let currentLibraryFile = null;
 
+// Extract potential property names from .riv file binary
+// Rive files contain property names as readable strings
+function extractPropertyNamesFromRiv(buffer) {
+  const names = new Set();
+  const bytes = new Uint8Array(buffer);
+  
+  // Look for readable ASCII strings (property names are usually 2-30 chars, camelCase or snake_case)
+  let currentString = '';
+  const minLength = 2;
+  const maxLength = 50;
+  
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    // Check if it's a printable ASCII character (letters, numbers, underscore)
+    if ((byte >= 65 && byte <= 90) ||  // A-Z
+        (byte >= 97 && byte <= 122) || // a-z
+        (byte >= 48 && byte <= 57) ||  // 0-9
+        byte === 95) {                  // underscore
+      currentString += String.fromCharCode(byte);
+    } else {
+      // End of string - save if valid length
+      if (currentString.length >= minLength && currentString.length <= maxLength) {
+        // Filter out common non-property strings
+        const lowerStr = currentString.toLowerCase();
+        const blacklist = ['rive', 'main', 'artboard', 'state', 'machine', 'animation', 
+                          'layer', 'shape', 'fill', 'stroke', 'path', 'bone', 'mesh',
+                          'constraint', 'clipping', 'blend', 'group', 'node', 'key',
+                          'frame', 'linear', 'cubic', 'hold', 'elastic', 'bounce',
+                          'ease', 'null', 'true', 'false', 'undefined', 'function',
+                          'object', 'array', 'string', 'number', 'boolean', 'trigger',
+                          'enum', 'color', 'instance', 'default', 'constructor'];
+        
+        // Check if it looks like a valid property name (starts with letter, camelCase or has meaning)
+        if (!blacklist.includes(lowerStr) && 
+            /^[a-zA-Z][a-zA-Z0-9_]*$/.test(currentString) &&
+            currentString.length <= 30) {
+          // Prioritize names that look like properties (camelCase, specific patterns)
+          if (/^(is|has|can|should|enable|disable|show|hide|toggle|on|off)[A-Z]/.test(currentString) ||
+              /^[a-z]+[A-Z]/.test(currentString) || // camelCase
+              /^[a-z]{2,}$/.test(currentString)) {  // simple lowercase
+            names.add(currentString);
+          }
+        }
+      }
+      currentString = '';
+    }
+  }
+  
+  // Handle last string if file doesn't end with non-ASCII
+  if (currentString.length >= minLength && currentString.length <= maxLength) {
+    if (/^[a-zA-Z][a-zA-Z0-9_]*$/.test(currentString)) {
+      names.add(currentString);
+    }
+  }
+  
+  return Array.from(names);
+}
+
 function disposeRive() {
   if (riveInstance) {
     riveInstance.stop();
@@ -286,15 +344,17 @@ function discoverViewModelProperties(vmi) {
     console.log('Trying direct type accessors...');
     
     // The ViewModel has methods: boolean(name), number(name), string(name), etc.
-    // Try accessing properties by trying each type accessor with common property names
+    // Try accessing properties by trying each type accessor with extracted property names
     const typeAccessors = ['boolean', 'number', 'string', 'trigger', 'enum', 'color'];
     
-    // Common property names we might find in Rive files
-    // We can also try to extract these from the file if needed
+    // Extract property names from the .riv file buffer dynamically
+    const extractedNames = selectedRivBuffer ? extractPropertyNamesFromRiv(selectedRivBuffer) : [];
+    console.log('Extracted property names from file:', extractedNames);
+    
+    // Combine extracted names with some common fallbacks
     const commonPropertyNames = [
-      // From megazord_final.riv file structure
-      'hasBG', 'isDark', 'nitro', 'success', 'error', 'warning', 'info',
-      // Common generic names
+      ...extractedNames,
+      // Common generic names as fallback
       'toggle', 'value', 'state', 'enabled', 'active', 'visible', 'color',
       'progress', 'count', 'index', 'selected', 'hover', 'pressed', 'checked'
     ];
@@ -763,19 +823,31 @@ function populateLibraryFiles() {
   });
 }
 
-function selectLibraryFile(file, btn) {
-  // Clear any uploaded file buffer
-  selectedRivBuffer = null;
-  currentLibraryFile = file.path;
-  
+async function selectLibraryFile(file, btn) {
   // Update UI
   document.querySelectorAll('.library-file').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   filePathInput.value = file.path;
   fileChooser.value = '';
+  currentLibraryFile = file.path;
+  
+  // Fetch the file as ArrayBuffer so we can extract property names
+  try {
+    const response = await fetch(file.path);
+    if (response.ok) {
+      selectedRivBuffer = await response.arrayBuffer();
+      console.log('Library file fetched as buffer, size:', selectedRivBuffer.byteLength);
+    } else {
+      console.warn('Failed to fetch library file as buffer:', response.status);
+      selectedRivBuffer = null;
+    }
+  } catch (e) {
+    console.warn('Error fetching library file:', e);
+    selectedRivBuffer = null;
+  }
   
   // Load the file
-  loadRive();
+  await loadRive();
 }
 
 // Wire UI
