@@ -484,6 +484,7 @@ function createControllerFromRawProperty(propDescriptor, vmi) {
     console.log(`  Property has value getter:`, 'value' in actualProp);
     console.log(`  Property has fire method:`, typeof actualProp.fire);
     console.log(`  Property value (if any):`, actualProp.value);
+    console.log(`  _viewModelInstanceValue:`, actualProp._viewModelInstanceValue);
     
     // Create controller with the actual property instance
     return createControllerFromProperty(actualProp, accessorName, vmi);
@@ -496,13 +497,24 @@ function createControllerFromRawProperty(propDescriptor, vmi) {
 function createControllerFromProperty(prop, type, vmi) {
   const name = prop.name;
   
+  // Helper to get fresh property instance each time (important for Rive ViewModel)
+  const getFreshProp = () => {
+    const accessorName = type === 'bool' ? 'boolean' : type.toLowerCase();
+    if (typeof vmi[accessorName] === 'function') {
+      return vmi[accessorName](name);
+    }
+    return prop; // fallback to cached
+  };
+  
   if (type === 'boolean') {
     return {
       name,
       type: 'boolean',
       value: prop.value,
       setValue: (val) => {
-        prop.value = val;
+        const freshProp = getFreshProp();
+        console.log(`Setting ${name} to ${val}, freshProp:`, freshProp);
+        freshProp.value = val;
       }
     };
   } else if (type === 'number') {
@@ -511,8 +523,8 @@ function createControllerFromProperty(prop, type, vmi) {
       type: 'number',
       value: prop.value ?? 0,
       setValue: (val) => {
-        console.log(`Setting ${name} to ${val}`);
-        prop.value = Number.isFinite(val) ? val : 0;
+        const freshProp = getFreshProp();
+        freshProp.value = Number.isFinite(val) ? val : 0;
       }
     };
   } else if (type === 'string') {
@@ -521,8 +533,8 @@ function createControllerFromProperty(prop, type, vmi) {
       type: 'string',
       value: prop.value ?? '',
       setValue: (val) => {
-        console.log(`Setting ${name} to ${val}`);
-        prop.value = val;
+        const freshProp = getFreshProp();
+        freshProp.value = val;
       }
     };
   } else if (type === 'trigger') {
@@ -530,13 +542,15 @@ function createControllerFromProperty(prop, type, vmi) {
       name,
       type: 'trigger',
       fire: () => {
-        // Rive ViewModel triggers use .trigger() method
-        if (typeof prop.trigger === 'function') {
-          prop.trigger();
-        } else if (typeof prop.fire === 'function') {
-          prop.fire();
+        // Get fresh property instance and trigger it
+        const freshProp = getFreshProp();
+        console.log(`Firing trigger ${name}, freshProp:`, freshProp);
+        if (typeof freshProp.trigger === 'function') {
+          freshProp.trigger();
+        } else if (typeof freshProp.fire === 'function') {
+          freshProp.fire();
         } else {
-          prop.value = true;
+          freshProp.value = true;
         }
       }
     };
@@ -597,6 +611,21 @@ async function loadRive() {
   disposeRive();
   const src = filePathInput.value.trim();
   const desiredSM = smNameInput.value.trim() || null;
+  
+  // If loading from a path (not a buffer from library selection), clear the buffer
+  // and fetch the new file as a buffer for consistent loading
+  if (src && !currentLibraryFile) {
+    try {
+      console.log('Fetching file from path:', src);
+      const response = await fetch(src);
+      if (response.ok) {
+        selectedRivBuffer = await response.arrayBuffer();
+        console.log('Fetched as buffer, size:', selectedRivBuffer.byteLength);
+      }
+    } catch (e) {
+      console.log('Could not fetch file as buffer, will try src directly:', e.message);
+    }
+  }
 
   const RiveNS = window.rive || window;
   const RiveCtor = window.Rive || (RiveNS && RiveNS.Rive);
@@ -651,6 +680,43 @@ async function loadRive() {
         const stateMachines = typeof riveInstance.stateMachineNames === 'function' ? riveInstance.stateMachineNames() : (riveInstance.stateMachineNames || []);
         console.log('Available artboards:', artboards);
         console.log('Available state machines:', stateMachines);
+        
+        // Try to get the default bindable artboard
+        if (typeof riveInstance.getDefaultBindableArtboard === 'function') {
+          const bindableArtboard = riveInstance.getDefaultBindableArtboard();
+          console.log('Default Bindable Artboard:', bindableArtboard);
+          if (bindableArtboard) {
+            console.log('Bindable Artboard name:', bindableArtboard.name);
+          }
+        }
+        
+        // Check the artboard property
+        if (riveInstance.artboard) {
+          console.log('Current artboard:', riveInstance.artboard);
+          console.log('Artboard name:', riveInstance.artboard.name);
+        }
+        
+        // Try to get contents to see what's in the file
+        if (typeof riveInstance.contents === 'function') {
+          try {
+            const contents = riveInstance.contents();
+            console.log('File contents:', contents);
+          } catch (e) {
+            console.log('Could not get contents:', e.message);
+          }
+        }
+        
+        // Check renderer
+        console.log('Renderer:', riveInstance.renderer);
+        console.log('Runtime:', riveInstance.runtime);
+        
+        // Force a resize to ensure canvas is properly configured
+        try {
+          riveInstance.resizeDrawingSurfaceToCanvas();
+          console.log('✓ Resized drawing surface');
+        } catch (e) {
+          console.log('Could not resize:', e.message);
+        }
       } catch (e) {
         console.log('Could not enumerate artboards/state machines:', e);
       }
@@ -680,17 +746,82 @@ async function loadRive() {
       try {
         riveInstance.play(smName);
         console.log('✓ State Machine started:', smName);
+        
+        // Debug: Check if animation is running
+        console.log('frameRequestId:', riveInstance.frameRequestId);
+        console.log('isPlaying:', riveInstance.isPlaying);
+        
+        // Store riveInstance globally for debugging
+        window._riveInstance = riveInstance;
+        window._vmi = riveInstance.viewModelInstance;
       } catch (e) {
         console.log('Error starting state machine:', e.message);
       }
       
       // Check for ViewModel Instance (new Data Binding API)
-      const vmi = riveInstance.viewModelInstance;
+      console.log('=== Checking ViewModel APIs ===');
+      
+      // Log all available ViewModel methods
+      const vmMethods = ['viewModelInstance', 'defaultViewModel', 'viewModelByName', 'viewModelByIndex', 
+                         'bindViewModelInstance', 'getBindableArtboard', 'getDefaultBindableArtboard', 'enums'];
+      vmMethods.forEach(method => {
+        if (typeof riveInstance[method] === 'function') {
+          console.log(`✓ ${method}() is available`);
+        } else if (riveInstance[method] !== undefined) {
+          console.log(`✓ ${method} property exists:`, riveInstance[method]);
+        } else {
+          console.log(`✗ ${method} not available`);
+        }
+      });
+      
+      let vmi = riveInstance.viewModelInstance;
+      
+      // Store riveInstance globally for debugging
+      window._riveInstance = riveInstance;
+      
+      // If no viewModelInstance with autoBind, try to manually bind
+      if (!vmi && typeof riveInstance.defaultViewModel === 'function') {
+        console.log('Trying to manually bind ViewModel...');
+        try {
+          const defaultVM = riveInstance.defaultViewModel();
+          console.log('Default ViewModel:', defaultVM);
+          if (defaultVM) {
+            // Try to create instance and bind it
+            if (typeof defaultVM.defaultInstance === 'function') {
+              const vmInstance = defaultVM.defaultInstance();
+              console.log('Created VM instance:', vmInstance);
+              if (vmInstance && typeof riveInstance.bindViewModelInstance === 'function') {
+                riveInstance.bindViewModelInstance(vmInstance);
+                vmi = vmInstance;
+                console.log('✓ Manually bound ViewModel instance');
+              }
+            }
+          }
+        } catch (e) {
+          console.log('Error manually binding ViewModel:', e.message);
+        }
+      }
+      
       if (vmi) {
         console.log('✓ viewModelInstance found!');
         console.log('ViewModel Instance:', vmi);
         console.log('ViewModel Instance keys:', Object.keys(vmi));
         console.log('ViewModel Instance prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(vmi)));
+        
+        // Store globally for debugging
+        window._vmi = vmi;
+        
+        // Check if there's a nativeInstance or runtimeInstance
+        if (vmi.nativeInstance) {
+          console.log('  nativeInstance:', vmi.nativeInstance);
+          console.log('  nativeInstance type:', typeof vmi.nativeInstance);
+        }
+        if (vmi.runtimeInstance) {
+          console.log('  runtimeInstance:', vmi.runtimeInstance);
+        }
+        if (vmi._runtimeInstance) {
+          console.log('  _runtimeInstance:', vmi._runtimeInstance);
+        }
         
         // Try to dynamically discover ViewModel properties
         const viewModelControllers = discoverViewModelProperties(vmi);
