@@ -12,6 +12,7 @@ const libraryFilesContainer = document.getElementById('libraryFiles');
 
 // Library files from the rives folder
 const LIBRARY_FILES = [
+  { name: 'Quick Actions V10', path: './rives/quick_actions_v10.riv' },
   { name: 'Megazord', path: './rives/megazord_v1.riv' },
   { name: 'Moedas Icon', path: './rives/moedas_icon.riv' },
   { name: 'WidgeTip', path: './rives/widgetip.riv' },
@@ -368,7 +369,7 @@ function discoverViewModelProperties(vmi) {
             if (prop) {
               console.log(`✓ Found ${accessor} property "${propName}":`, prop);
               console.log(`  Value:`, prop.value);
-              const controller = createControllerFromProperty(prop, accessor, vmi);
+              const controller = createControllerFromProperty(prop, accessor);
               if (controller) {
                 controllers.push(controller);
                 console.log(`  ✓ Created controller for "${propName}" (${accessor})`);
@@ -474,89 +475,53 @@ function createControllerFromRawProperty(propDescriptor, vmi) {
   }
   
   try {
-    const actualProp = vmi[accessorName](name);
-    if (!actualProp) {
+    const handle = vmi[accessorName](name);
+    if (!handle) {
       console.log(`  Could not get property instance for "${name}" via ${accessorName}()`);
       return null;
     }
     
-    console.log(`  Got actual property instance for "${name}":`, actualProp);
-    console.log(`  Property instance keys:`, Object.keys(actualProp));
-    console.log(`  Property instance prototype:`, Object.getOwnPropertyNames(Object.getPrototypeOf(actualProp)));
-    console.log(`  Property has value getter:`, 'value' in actualProp);
-    console.log(`  Property has fire method:`, typeof actualProp.fire);
-    console.log(`  Property value (if any):`, actualProp.value);
-    console.log(`  _viewModelInstanceValue:`, actualProp._viewModelInstanceValue);
+    console.log(`  ✓ Got handle for "${name}" (${accessorName})`);
     
-    // Create controller with the actual property instance
-    return createControllerFromProperty(actualProp, accessorName, vmi);
+    // Create controller with the handle - store it directly, don't re-fetch
+    return createControllerFromProperty(handle, accessorName);
   } catch (e) {
     console.log(`  Error getting property "${name}" via ${accessorName}():`, e.message);
     return null;
   }
 }
 
-function createControllerFromProperty(prop, type, vmi) {
-  const name = prop.name;
-  
-  // Helper to get fresh property instance each time (important for Rive ViewModel)
-  const getFreshProp = () => {
-    const accessorName = type === 'bool' ? 'boolean' : type.toLowerCase();
-    if (typeof vmi[accessorName] === 'function') {
-      return vmi[accessorName](name);
-    }
-    return prop; // fallback to cached
-  };
+function createControllerFromProperty(handle, type) {
+  // Store the handle directly - don't re-fetch it each time
+  // This matches the working pattern in proto-live-tester
+  const name = handle.name;
   
   if (type === 'boolean') {
     return {
       name,
       type: 'boolean',
-      value: prop.value,
+      value: handle.value,
       setValue: (val) => {
-        const freshProp = getFreshProp();
-        console.log(`Setting ${name} to ${val}`);
-        console.log('  freshProp:', freshProp);
-        console.log('  freshProp.value before:', freshProp.value);
-        
-        // Try the high-level API first
-        freshProp.value = val;
-        console.log('  freshProp.value after:', freshProp.value);
-        
-        // Also try the internal _viewModelInstanceValue if available
-        if (freshProp._viewModelInstanceValue) {
-          console.log('  Trying _viewModelInstanceValue...');
-          const internalVal = freshProp._viewModelInstanceValue;
-          console.log('  internalVal:', internalVal);
-          console.log('  internalVal keys:', Object.keys(internalVal));
-          console.log('  internalVal prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(internalVal)));
-          
-          // Try to set through internal value
-          if (typeof internalVal.value !== 'undefined') {
-            internalVal.value = val;
-            console.log('  Set internalVal.value to', val);
-          }
-        }
+        // Use the stored handle directly
+        handle.value = val;
       }
     };
   } else if (type === 'number') {
     return {
       name,
       type: 'number',
-      value: prop.value ?? 0,
+      value: handle.value ?? 0,
       setValue: (val) => {
-        const freshProp = getFreshProp();
-        freshProp.value = Number.isFinite(val) ? val : 0;
+        handle.value = Number.isFinite(val) ? val : 0;
       }
     };
   } else if (type === 'string') {
     return {
       name,
       type: 'string',
-      value: prop.value ?? '',
+      value: handle.value ?? '',
       setValue: (val) => {
-        const freshProp = getFreshProp();
-        freshProp.value = val;
+        handle.value = val;
       }
     };
   } else if (type === 'trigger') {
@@ -564,35 +529,8 @@ function createControllerFromProperty(prop, type, vmi) {
       name,
       type: 'trigger',
       fire: () => {
-        // Get fresh property instance and trigger it
-        const freshProp = getFreshProp();
-        console.log(`Firing trigger ${name}`);
-        console.log('  freshProp:', freshProp);
-        console.log('  freshProp.trigger:', typeof freshProp.trigger);
-        
-        // Try the high-level trigger API
-        if (typeof freshProp.trigger === 'function') {
-          console.log('  Calling freshProp.trigger()');
-          freshProp.trigger();
-        }
-        
-        // Also try the internal _viewModelInstanceValue if available
-        if (freshProp._viewModelInstanceValue) {
-          console.log('  Trying _viewModelInstanceValue for trigger...');
-          const internalVal = freshProp._viewModelInstanceValue;
-          console.log('  internalVal:', internalVal);
-          console.log('  internalVal keys:', Object.keys(internalVal));
-          console.log('  internalVal prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(internalVal)));
-          
-          // Try to fire through internal value
-          if (typeof internalVal.fire === 'function') {
-            console.log('  Calling internalVal.fire()');
-            internalVal.fire();
-          } else if (typeof internalVal.trigger === 'function') {
-            console.log('  Calling internalVal.trigger()');
-            internalVal.trigger();
-          }
-        }
+        // Use the stored handle's trigger method directly
+        handle.trigger();
       }
     };
   } else if (type === 'enum') {
@@ -637,7 +575,7 @@ function tryCreateControllerForProperty(vmi, name) {
       try {
         const prop = vmi[accessor](name);
         if (prop) {
-          return createControllerFromProperty(prop, accessor, vmi);
+          return createControllerFromProperty(prop, accessor);
         }
       } catch (e) {
         // Not this type, continue
