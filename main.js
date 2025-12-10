@@ -12,11 +12,7 @@ const libraryFilesContainer = document.getElementById('libraryFiles');
 
 // Library files from the rives folder
 const LIBRARY_FILES = [
-  { name: 'ViewModel Test', path: './rives/viewmodel_test.riv' },
-  { name: 'Medal Moedas', path: './rives/medal_moedas_(15).riv' },
-  { name: 'Widget IP', path: './rives/widgetip.riv' },
-  { name: 'Untitled', path: './rives/untitledasdasd.riv' },
-  { name: 'Jim Eye Evil', path: './jim_eye_all_master_v4_evil_cores_bg_(1).riv' },
+  { name: 'Megazord', path: './rives/megazord_v1.riv' },
 ];
 
 /** @type {import('@rive-app/canvas').Rive | null} */
@@ -184,6 +180,7 @@ async function loadRive() {
   riveInstance = new RiveCtor({
     ...firstCtorOpts,
     onLoad: () => {
+      console.log('Rive loaded successfully');
       // Ensure canvas internal surface matches CSS size
       try { riveInstance.resizeDrawingSurfaceToCanvas(); } catch (_) {}
       window.addEventListener('resize', () => {
@@ -191,6 +188,17 @@ async function loadRive() {
           try { riveInstance.resizeDrawingSurfaceToCanvas(); } catch (_) {}
         }
       });
+      
+      // Debug: Log available artboards and state machines
+      try {
+        const artboards = typeof riveInstance.artboardNames === 'function' ? riveInstance.artboardNames() : (riveInstance.artboardNames || []);
+        const stateMachines = typeof riveInstance.stateMachineNames === 'function' ? riveInstance.stateMachineNames() : (riveInstance.stateMachineNames || []);
+        console.log('Available artboards:', artboards);
+        console.log('Available state machines:', stateMachines);
+      } catch (e) {
+        console.log('Could not enumerate artboards/state machines:', e);
+      }
+      
       populateSelectors(riveInstance, currentArtboardName, desiredSM);
       const smName = desiredSM || smSelect.value || detectFirstStateMachine(riveInstance);
       if (!smName) {
