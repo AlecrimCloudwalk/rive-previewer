@@ -440,42 +440,58 @@ function discoverViewModelProperties(vmi) {
   return controllers;
 }
 
-// Create controller from a raw property object returned by properties()
-function createControllerFromRawProperty(prop, vmi) {
-  const name = prop.name;
+// Create controller from a raw property descriptor returned by properties()
+// The descriptor has {name, type} but we need to get the actual property instance
+function createControllerFromRawProperty(propDescriptor, vmi) {
+  const name = propDescriptor.name;
+  let type = propDescriptor.type;
   
-  // Try to determine the type from the property object
-  // Different Rive versions may expose this differently
-  let type = prop.type;
+  console.log(`  Property descriptor: name="${name}", type="${type}"`);
   
-  // If type is not directly available, try to infer from constructor name or methods
-  if (!type) {
-    const ctorName = prop.constructor?.name?.toLowerCase() || '';
-    if (ctorName.includes('bool')) type = 'boolean';
-    else if (ctorName.includes('number')) type = 'number';
-    else if (ctorName.includes('string')) type = 'string';
-    else if (ctorName.includes('trigger')) type = 'trigger';
-    else if (ctorName.includes('enum')) type = 'enum';
-    else if (ctorName.includes('color')) type = 'color';
-  }
+  // Map type strings to accessor method names
+  const typeMap = {
+    'boolean': 'boolean',
+    'bool': 'boolean',
+    'number': 'number',
+    'string': 'string',
+    'trigger': 'trigger',
+    'enum': 'enum',
+    'color': 'color',
+  };
   
-  // If still no type, check what value looks like
-  if (!type) {
-    const val = prop.value;
-    if (typeof val === 'boolean') type = 'boolean';
-    else if (typeof val === 'number') type = 'number';
-    else if (typeof val === 'string') type = 'string';
-    else if (typeof prop.fire === 'function') type = 'trigger';
-  }
+  const accessorName = typeMap[type?.toLowerCase()] || type?.toLowerCase();
   
-  console.log(`  Inferred type for "${name}": ${type}`);
-  
-  if (!type) {
-    console.log(`  Could not determine type for property "${name}"`);
+  if (!accessorName) {
+    console.log(`  Unknown type "${type}" for property "${name}"`);
     return null;
   }
   
-  return createControllerFromProperty(prop, type, vmi);
+  // Get the actual property instance using the type-specific accessor
+  if (typeof vmi[accessorName] !== 'function') {
+    console.log(`  No accessor method "${accessorName}" on viewModelInstance`);
+    return null;
+  }
+  
+  try {
+    const actualProp = vmi[accessorName](name);
+    if (!actualProp) {
+      console.log(`  Could not get property instance for "${name}" via ${accessorName}()`);
+      return null;
+    }
+    
+    console.log(`  Got actual property instance for "${name}":`, actualProp);
+    console.log(`  Property instance keys:`, Object.keys(actualProp));
+    console.log(`  Property instance prototype:`, Object.getOwnPropertyNames(Object.getPrototypeOf(actualProp)));
+    console.log(`  Property has value getter:`, 'value' in actualProp);
+    console.log(`  Property has fire method:`, typeof actualProp.fire);
+    console.log(`  Property value (if any):`, actualProp.value);
+    
+    // Create controller with the actual property instance
+    return createControllerFromProperty(actualProp, accessorName, vmi);
+  } catch (e) {
+    console.log(`  Error getting property "${name}" via ${accessorName}():`, e.message);
+    return null;
+  }
 }
 
 function createControllerFromProperty(prop, type, vmi) {
@@ -517,11 +533,15 @@ function createControllerFromProperty(prop, type, vmi) {
       type: 'trigger',
       fire: () => {
         console.log(`Firing trigger ${name}`);
-        if (typeof prop.fire === 'function') {
-          prop.fire();
-        } else if (typeof prop.trigger === 'function') {
+        // Rive ViewModel triggers use .trigger() method
+        if (typeof prop.trigger === 'function') {
+          console.log(`  Calling prop.trigger()`);
           prop.trigger();
+        } else if (typeof prop.fire === 'function') {
+          console.log(`  Calling prop.fire()`);
+          prop.fire();
         } else {
+          console.log(`  No trigger/fire method, setting value = true`);
           prop.value = true;
         }
       }
