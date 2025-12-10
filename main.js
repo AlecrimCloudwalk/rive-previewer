@@ -144,9 +144,8 @@ function makeToggleRow(name, initial, onChange) {
   knob.className = 'knob';
   wrapper.appendChild(input);
   wrapper.appendChild(knob);
-  wrapper.addEventListener('click', (e) => {
-    e.preventDefault();
-    input.checked = !input.checked;
+  // Use 'change' event on the input itself to avoid double-toggle issues
+  input.addEventListener('change', () => {
     onChange(input.checked);
   });
   row.appendChild(label);
@@ -503,7 +502,6 @@ function createControllerFromProperty(prop, type, vmi) {
       type: 'boolean',
       value: prop.value,
       setValue: (val) => {
-        console.log(`Setting ${name} to ${val}`);
         prop.value = val;
       }
     };
@@ -532,16 +530,12 @@ function createControllerFromProperty(prop, type, vmi) {
       name,
       type: 'trigger',
       fire: () => {
-        console.log(`Firing trigger ${name}`);
         // Rive ViewModel triggers use .trigger() method
         if (typeof prop.trigger === 'function') {
-          console.log(`  Calling prop.trigger()`);
           prop.trigger();
         } else if (typeof prop.fire === 'function') {
-          console.log(`  Calling prop.fire()`);
           prop.fire();
         } else {
-          console.log(`  No trigger/fire method, setting value = true`);
           prop.value = true;
         }
       }
@@ -678,6 +672,9 @@ async function loadRive() {
       console.log('Rive Instance:', riveInstance);
       console.log('Rive Instance keys:', Object.keys(riveInstance));
       console.log('State Machine Name:', smName);
+      console.log('Artboard dimensions:', riveInstance._artboardWidth, 'x', riveInstance._artboardHeight);
+      console.log('Canvas dimensions:', canvas.width, 'x', canvas.height);
+      console.log('Canvas client dimensions:', canvas.clientWidth, 'x', canvas.clientHeight);
       
       // Make sure state machine is playing
       try {
