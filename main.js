@@ -136,9 +136,387 @@ function buildControls(controllers) {
       frag.appendChild(makeTriggerRow(name, fire));
     } else if (type === 'number') {
       frag.appendChild(makeNumberRow(name, value, setValue));
+    } else if (type === 'string') {
+      frag.appendChild(makeStringRow(name, value, setValue));
+    } else if (type === 'color') {
+      frag.appendChild(makeColorRow(name, value, setValue));
+    } else if (type === 'enum') {
+      frag.appendChild(makeEnumRow(name, value, c.options, setValue));
     }
   }
   inputsContainer.appendChild(frag);
+}
+
+function makeStringRow(name, initial, onChange) {
+  const row = document.createElement('div');
+  row.className = 'input-row';
+  const label = document.createElement('label');
+  label.textContent = name;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'string-input';
+  input.value = String(initial ?? '');
+  input.addEventListener('input', () => onChange(input.value));
+  row.appendChild(label);
+  row.appendChild(input);
+  return row;
+}
+
+function makeColorRow(name, initial, onChange) {
+  const row = document.createElement('div');
+  row.className = 'input-row';
+  const label = document.createElement('label');
+  label.textContent = name;
+  const input = document.createElement('input');
+  input.type = 'color';
+  input.className = 'color-input';
+  input.value = initial || '#000000';
+  input.addEventListener('input', () => onChange(input.value));
+  row.appendChild(label);
+  row.appendChild(input);
+  return row;
+}
+
+function makeEnumRow(name, initial, options, onChange) {
+  const row = document.createElement('div');
+  row.className = 'input-row';
+  const label = document.createElement('label');
+  label.textContent = name;
+  const select = document.createElement('select');
+  select.className = 'enum-input';
+  options.forEach((opt, idx) => {
+    const option = document.createElement('option');
+    option.value = idx;
+    option.textContent = opt;
+    if (idx === initial) option.selected = true;
+    select.appendChild(option);
+  });
+  select.addEventListener('change', () => onChange(parseInt(select.value, 10)));
+  row.appendChild(label);
+  row.appendChild(select);
+  return row;
+}
+
+// Dynamically discover all ViewModel properties
+function discoverViewModelProperties(vmi) {
+  const controllers = [];
+  
+  console.log('=== Discovering ViewModel Properties ===');
+  console.log('ViewModel Instance:', vmi);
+  
+  // Method 1: Use properties - this returns all bound properties
+  console.log('Checking for properties...');
+  console.log('typeof vmi.properties:', typeof vmi.properties);
+  console.log('vmi.properties value:', vmi.properties);
+  
+  try {
+    // properties might be a getter that returns an object/array, or a method
+    let props;
+    if (typeof vmi.properties === 'function') {
+      props = vmi.properties();
+    } else if (vmi.properties !== null && vmi.properties !== undefined) {
+      props = vmi.properties;
+    }
+    console.log('properties returned:', props);
+    console.log('properties type:', typeof props);
+    
+    if (props) {
+      // Convert to array if needed
+      let propArray;
+      if (Array.isArray(props)) {
+        propArray = props;
+      } else if (props.size !== undefined) {
+        // It's a Map or Set
+        propArray = Array.from(props.values ? props.values() : props);
+      } else if (typeof props[Symbol.iterator] === 'function') {
+        propArray = Array.from(props);
+      } else {
+        propArray = Object.entries(props).map(([key, val]) => ({ name: key, ...val }));
+      }
+      
+      console.log('Converted to array:', propArray);
+      console.log('Array length:', propArray.length);
+      
+      for (let i = 0; i < propArray.length; i++) {
+        const prop = propArray[i];
+        console.log(`Property ${i}:`, prop);
+        console.log(`  Constructor:`, prop?.constructor?.name);
+        console.log(`  Keys:`, prop ? Object.keys(prop) : 'null');
+        console.log(`  Prototype:`, prop ? Object.getOwnPropertyNames(Object.getPrototypeOf(prop)) : 'null');
+        
+        if (prop) {
+          // Try to get name - might be a method or property
+          const name = typeof prop.name === 'function' ? prop.name() : prop.name;
+          console.log(`  Name:`, name);
+          
+          if (name) {
+            const controller = createControllerFromRawProperty(prop, vmi);
+            if (controller) {
+              controllers.push(controller);
+              console.log(`  ✓ Created controller for "${name}"`);
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('Error with properties():', e.message, e);
+  }
+  
+  // Method 2: Try propertyFromPath with common paths
+  if (controllers.length === 0) {
+    console.log('Trying propertyFromPath...');
+    
+    if (typeof vmi.propertyFromPath === 'function') {
+      // Try root path and common paths
+      const pathsToTry = ['', '/', 'root', 'default'];
+      for (const path of pathsToTry) {
+        try {
+          const prop = vmi.propertyFromPath(path);
+          console.log(`propertyFromPath("${path}"):`, prop);
+        } catch (e) {
+          console.log(`propertyFromPath("${path}") error:`, e.message);
+        }
+      }
+    }
+  }
+  
+  // Method 3: Direct type accessor methods - try to access properties by guessing names
+  if (controllers.length === 0) {
+    console.log('Trying direct type accessors...');
+    
+    // The ViewModel has methods: boolean(name), number(name), string(name), etc.
+    // Try accessing properties by trying each type accessor with common property names
+    const typeAccessors = ['boolean', 'number', 'string', 'trigger', 'enum', 'color'];
+    
+    // Common property names we might find in Rive files
+    // We can also try to extract these from the file if needed
+    const commonPropertyNames = [
+      // From megazord_final.riv file structure
+      'hasBG', 'isDark', 'nitro', 'success', 'error', 'warning', 'info',
+      // Common generic names
+      'toggle', 'value', 'state', 'enabled', 'active', 'visible', 'color',
+      'progress', 'count', 'index', 'selected', 'hover', 'pressed', 'checked'
+    ];
+    
+    for (const propName of commonPropertyNames) {
+      for (const accessor of typeAccessors) {
+        if (typeof vmi[accessor] === 'function') {
+          try {
+            const prop = vmi[accessor](propName);
+            if (prop) {
+              console.log(`✓ Found ${accessor} property "${propName}":`, prop);
+              console.log(`  Value:`, prop.value);
+              const controller = createControllerFromProperty(prop, accessor, vmi);
+              if (controller) {
+                controllers.push(controller);
+                console.log(`  ✓ Created controller for "${propName}" (${accessor})`);
+              }
+              break; // Found the property type, move to next property name
+            }
+          } catch (e) {
+            // Not this type, continue
+          }
+        }
+      }
+    }
+    
+    // Check if there's a nativeInstance that might have more info
+    if (typeof vmi.nativeInstance === 'function') {
+      try {
+        const native = vmi.nativeInstance();
+        console.log('nativeInstance:', native);
+        if (native) {
+          console.log('nativeInstance keys:', Object.keys(native));
+          console.log('nativeInstance prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(native)));
+        }
+      } catch (e) {
+        console.log('nativeInstance error:', e.message);
+      }
+    }
+    
+    // Check runtimeInstance
+    if (typeof vmi.runtimeInstance === 'function') {
+      try {
+        const rt = vmi.runtimeInstance();
+        console.log('runtimeInstance:', rt);
+        if (rt) {
+          console.log('runtimeInstance keys:', Object.keys(rt));
+        }
+      } catch (e) {
+        console.log('runtimeInstance error:', e.message);
+      }
+    }
+  }
+  
+  // Method 4: Check the internal structure
+  if (controllers.length === 0) {
+    console.log('Checking internal structure...');
+    
+    const proto = Object.getPrototypeOf(vmi);
+    console.log('Prototype methods:', Object.getOwnPropertyNames(proto));
+    
+    // Check _children Map
+    if (vmi._children instanceof Map) {
+      console.log('_children is a Map with', vmi._children.size, 'entries');
+      for (const [key, value] of vmi._children) {
+        console.log(`  Child "${key}":`, value);
+      }
+    } else if (vmi._children) {
+      console.log('_children:', vmi._children);
+      console.log('_children type:', typeof vmi._children);
+    }
+    
+    // Check _viewModelInstances
+    if (vmi._viewModelInstances instanceof Map) {
+      console.log('_viewModelInstances is a Map with', vmi._viewModelInstances.size, 'entries');
+      for (const [key, value] of vmi._viewModelInstances) {
+        console.log(`  VM Instance "${key}":`, value);
+      }
+    }
+  }
+  
+  console.log(`=== Total ViewModel properties discovered: ${controllers.length} ===`);
+  return controllers;
+}
+
+// Create controller from a raw property object returned by properties()
+function createControllerFromRawProperty(prop, vmi) {
+  const name = prop.name;
+  
+  // Try to determine the type from the property object
+  // Different Rive versions may expose this differently
+  let type = prop.type;
+  
+  // If type is not directly available, try to infer from constructor name or methods
+  if (!type) {
+    const ctorName = prop.constructor?.name?.toLowerCase() || '';
+    if (ctorName.includes('bool')) type = 'boolean';
+    else if (ctorName.includes('number')) type = 'number';
+    else if (ctorName.includes('string')) type = 'string';
+    else if (ctorName.includes('trigger')) type = 'trigger';
+    else if (ctorName.includes('enum')) type = 'enum';
+    else if (ctorName.includes('color')) type = 'color';
+  }
+  
+  // If still no type, check what value looks like
+  if (!type) {
+    const val = prop.value;
+    if (typeof val === 'boolean') type = 'boolean';
+    else if (typeof val === 'number') type = 'number';
+    else if (typeof val === 'string') type = 'string';
+    else if (typeof prop.fire === 'function') type = 'trigger';
+  }
+  
+  console.log(`  Inferred type for "${name}": ${type}`);
+  
+  if (!type) {
+    console.log(`  Could not determine type for property "${name}"`);
+    return null;
+  }
+  
+  return createControllerFromProperty(prop, type, vmi);
+}
+
+function createControllerFromProperty(prop, type, vmi) {
+  const name = prop.name;
+  
+  if (type === 'boolean') {
+    return {
+      name,
+      type: 'boolean',
+      value: prop.value,
+      setValue: (val) => {
+        console.log(`Setting ${name} to ${val}`);
+        prop.value = val;
+      }
+    };
+  } else if (type === 'number') {
+    return {
+      name,
+      type: 'number',
+      value: prop.value ?? 0,
+      setValue: (val) => {
+        console.log(`Setting ${name} to ${val}`);
+        prop.value = Number.isFinite(val) ? val : 0;
+      }
+    };
+  } else if (type === 'string') {
+    return {
+      name,
+      type: 'string',
+      value: prop.value ?? '',
+      setValue: (val) => {
+        console.log(`Setting ${name} to ${val}`);
+        prop.value = val;
+      }
+    };
+  } else if (type === 'trigger') {
+    return {
+      name,
+      type: 'trigger',
+      fire: () => {
+        console.log(`Firing trigger ${name}`);
+        if (typeof prop.fire === 'function') {
+          prop.fire();
+        } else if (typeof prop.trigger === 'function') {
+          prop.trigger();
+        } else {
+          prop.value = true;
+        }
+      }
+    };
+  } else if (type === 'enum') {
+    // Get enum options if available
+    let options = [];
+    if (typeof prop.options === 'function') {
+      options = prop.options();
+    } else if (Array.isArray(prop.options)) {
+      options = prop.options;
+    }
+    return {
+      name,
+      type: 'enum',
+      value: prop.value ?? 0,
+      options: options,
+      setValue: (val) => {
+        console.log(`Setting ${name} to ${val}`);
+        prop.value = val;
+      }
+    };
+  } else if (type === 'color') {
+    return {
+      name,
+      type: 'color',
+      value: prop.value ?? '#000000',
+      setValue: (val) => {
+        console.log(`Setting ${name} to ${val}`);
+        prop.value = val;
+      }
+    };
+  }
+  
+  return null;
+}
+
+function tryCreateControllerForProperty(vmi, name) {
+  // Try each property type accessor
+  const accessors = ['boolean', 'number', 'string', 'trigger', 'enum', 'color'];
+  
+  for (const accessor of accessors) {
+    if (typeof vmi[accessor] === 'function') {
+      try {
+        const prop = vmi[accessor](name);
+        if (prop) {
+          return createControllerFromProperty(prop, accessor, vmi);
+        }
+      } catch (e) {
+        // Not this type, continue
+      }
+    }
+  }
+  
+  return null;
 }
 
 async function loadRive() {
@@ -173,9 +551,13 @@ async function loadRive() {
     }
   };
 
+  // Don't hardcode artboard/stateMachine names - let Rive use defaults or specified values
+  const artboardOpt = currentArtboardName || undefined;
+  const smOpt = desiredSM || undefined;
+  
   const firstCtorOpts = selectedRivBuffer
-    ? { ...commonCtorOpts, buffer: selectedRivBuffer, artboard: currentArtboardName || 'Artboard', stateMachines: desiredSM || 'State Machine 1' }
-    : { ...commonCtorOpts, src, artboard: currentArtboardName || 'Artboard', stateMachines: desiredSM || 'State Machine 1' };
+    ? { ...commonCtorOpts, buffer: selectedRivBuffer, artboard: artboardOpt, stateMachines: smOpt }
+    : { ...commonCtorOpts, src, artboard: artboardOpt, stateMachines: smOpt };
 
   riveInstance = new RiveCtor({
     ...firstCtorOpts,
@@ -214,6 +596,7 @@ async function loadRive() {
       // Debug: Log the riveInstance to see what's available
       console.log('=== Rive Instance Debug ===');
       console.log('Rive Instance:', riveInstance);
+      console.log('Rive Instance keys:', Object.keys(riveInstance));
       console.log('State Machine Name:', smName);
       
       // Make sure state machine is playing
@@ -224,56 +607,23 @@ async function loadRive() {
         console.log('Error starting state machine:', e.message);
       }
       
-      // Check for ViewModel Instance (new API from tutorial)
-      if (riveInstance.viewModelInstance) {
+      // Check for ViewModel Instance (new Data Binding API)
+      const vmi = riveInstance.viewModelInstance;
+      if (vmi) {
         console.log('✓ viewModelInstance found!');
-        const vmi = riveInstance.viewModelInstance;
         console.log('ViewModel Instance:', vmi);
+        console.log('ViewModel Instance keys:', Object.keys(vmi));
+        console.log('ViewModel Instance prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(vmi)));
         
-        // Try to access the boolean property "asd"
-        try {
-          const asdProp = vmi.boolean('asd');
-          if (asdProp) {
-            console.log('✓ Found boolean property "asd"');
-            console.log('  Current value:', asdProp.value);
-            
-            // Create a control for it
-            const fakeInput = {
-              name: 'asd',
-              type: 'boolean',
-              value: asdProp.value,
-              setValue: (val) => {
-                console.log('=== TOGGLING ASD ===');
-                console.log('Setting asd from', asdProp.value, 'to', val);
-                asdProp.value = val;
-                console.log('Set asd to:', val);
-                
-                // Verify it was set
-                setTimeout(() => {
-                  console.log('Verified asd is now:', vmi.boolean('asd').value);
-                  console.log('Is playing:', riveInstance.isPlaying);
-                  console.log('Animation is responding! ✓');
-                }, 10);
-                
-                // Try to ensure state machine is playing
-                if (!riveInstance.isPlaying) {
-                  console.log('State machine not playing, starting it...');
-                  riveInstance.play();
-                }
-                
-                // Force a redraw
-                try {
-                  riveInstance.resizeDrawingSurfaceToCanvas();
-                } catch (e) {}
-              }
-            };
-            
-            // Build the UI immediately with this input
-            buildControls([fakeInput]);
-            return; // Exit early since we found the ViewModel input
-          }
-        } catch (e) {
-          console.log('Error accessing boolean "asd":', e.message);
+        // Try to dynamically discover ViewModel properties
+        const viewModelControllers = discoverViewModelProperties(vmi);
+        
+        if (viewModelControllers.length > 0) {
+          console.log('✓ Found', viewModelControllers.length, 'ViewModel properties');
+          buildControls(viewModelControllers);
+          return; // Exit early since we're using ViewModel
+        } else {
+          console.log('No ViewModel properties discovered, falling back to state machine inputs');
         }
       } else {
         console.log('✗ No viewModelInstance found');
