@@ -13,6 +13,8 @@ const libraryFilesContainer = document.getElementById('libraryFiles');
 // Library files from the rives folder
 const LIBRARY_FILES = [
   { name: 'Megazord', path: './rives/megazord_v1.riv' },
+  { name: 'Moedas Icon', path: './rives/moedas_icon.riv' },
+  { name: 'WidgeTip', path: './rives/widgetip.riv' },
 ];
 
 /** @type {import('@rive-app/canvas').Rive | null} */
@@ -513,8 +515,28 @@ function createControllerFromProperty(prop, type, vmi) {
       value: prop.value,
       setValue: (val) => {
         const freshProp = getFreshProp();
-        console.log(`Setting ${name} to ${val}, freshProp:`, freshProp);
+        console.log(`Setting ${name} to ${val}`);
+        console.log('  freshProp:', freshProp);
+        console.log('  freshProp.value before:', freshProp.value);
+        
+        // Try the high-level API first
         freshProp.value = val;
+        console.log('  freshProp.value after:', freshProp.value);
+        
+        // Also try the internal _viewModelInstanceValue if available
+        if (freshProp._viewModelInstanceValue) {
+          console.log('  Trying _viewModelInstanceValue...');
+          const internalVal = freshProp._viewModelInstanceValue;
+          console.log('  internalVal:', internalVal);
+          console.log('  internalVal keys:', Object.keys(internalVal));
+          console.log('  internalVal prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(internalVal)));
+          
+          // Try to set through internal value
+          if (typeof internalVal.value !== 'undefined') {
+            internalVal.value = val;
+            console.log('  Set internalVal.value to', val);
+          }
+        }
       }
     };
   } else if (type === 'number') {
@@ -544,13 +566,32 @@ function createControllerFromProperty(prop, type, vmi) {
       fire: () => {
         // Get fresh property instance and trigger it
         const freshProp = getFreshProp();
-        console.log(`Firing trigger ${name}, freshProp:`, freshProp);
+        console.log(`Firing trigger ${name}`);
+        console.log('  freshProp:', freshProp);
+        console.log('  freshProp.trigger:', typeof freshProp.trigger);
+        
+        // Try the high-level trigger API
         if (typeof freshProp.trigger === 'function') {
+          console.log('  Calling freshProp.trigger()');
           freshProp.trigger();
-        } else if (typeof freshProp.fire === 'function') {
-          freshProp.fire();
-        } else {
-          freshProp.value = true;
+        }
+        
+        // Also try the internal _viewModelInstanceValue if available
+        if (freshProp._viewModelInstanceValue) {
+          console.log('  Trying _viewModelInstanceValue for trigger...');
+          const internalVal = freshProp._viewModelInstanceValue;
+          console.log('  internalVal:', internalVal);
+          console.log('  internalVal keys:', Object.keys(internalVal));
+          console.log('  internalVal prototype:', Object.getOwnPropertyNames(Object.getPrototypeOf(internalVal)));
+          
+          // Try to fire through internal value
+          if (typeof internalVal.fire === 'function') {
+            console.log('  Calling internalVal.fire()');
+            internalVal.fire();
+          } else if (typeof internalVal.trigger === 'function') {
+            console.log('  Calling internalVal.trigger()');
+            internalVal.trigger();
+          }
         }
       }
     };
@@ -828,6 +869,39 @@ async function loadRive() {
         
         if (viewModelControllers.length > 0) {
           console.log('✓ Found', viewModelControllers.length, 'ViewModel properties');
+          
+          // ALSO check for state machine inputs - maybe ViewModel binds through these
+          let smInputs = riveInstance.stateMachineInputs(smName) || [];
+          console.log('State Machine Inputs (alongside ViewModel):', smInputs.length);
+          if (smInputs.length > 0) {
+            console.log('SM Input details:', smInputs.map(i => ({
+              name: i.name,
+              type: i.type,
+              value: i.value
+            })));
+            
+            // Check if any SM inputs match ViewModel property names
+            const vmNames = viewModelControllers.map(c => c.name);
+            const matchingInputs = smInputs.filter(i => vmNames.includes(i.name));
+            console.log('Matching SM inputs:', matchingInputs.map(i => i.name));
+            
+            // If we have matching inputs, use those instead!
+            if (matchingInputs.length > 0) {
+              console.log('✓ Using State Machine inputs instead of ViewModel properties');
+              const controllers = matchingInputs.map(inp => ({
+                name: inp.name,
+                type: inp.type === RiveNS.StateMachineInputType.Trigger ? 'trigger' :
+                      inp.type === RiveNS.StateMachineInputType.Boolean ? 'boolean' :
+                      inp.type === RiveNS.StateMachineInputType.Number ? 'number' : 'unknown',
+                value: inp.value,
+                setValue: (val) => { inp.value = val; },
+                fire: () => { if (inp.fire) inp.fire(); }
+              }));
+              buildControls(controllers);
+              return;
+            }
+          }
+          
           buildControls(viewModelControllers);
           return; // Exit early since we're using ViewModel
         } else {
